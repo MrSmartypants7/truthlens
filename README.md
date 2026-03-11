@@ -13,7 +13,7 @@ TruthLens extracts factual claims from any LLM response, retrieves evidence from
 
 ---
 
-**[🌐 Live Demo →](https://YOUR_USERNAME.github.io/truthlens)**
+**[🌐 Live Demo →](https://mrsmartypants7.github.io/truthlens/)**
 
 ---
 
