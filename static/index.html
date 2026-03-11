@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TruthLens — LLM Hallucination Detection</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0e17;
+      --surface: #111827;
+      --surface-hover: #1a2332;
+      --border: #1e293b;
+      --border-focus: #3b82f6;
+      --text: #e2e8f0;
+      --text-muted: #64748b;
+      --text-dim: #475569;
+      --accent: #3b82f6;
+      --green: #22c55e;
+      --green-dim: rgba(34,197,94,0.12);
+      --red: #ef4444;
+      --red-dim: rgba(239,68,68,0.12);
+      --yellow: #eab308;
+      --yellow-dim: rgba(234,179,8,0.12);
+      --purple: #a855f7;
+      --purple-dim: rgba(168,85,247,0.12);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    ::selection { background: var(--accent); color: white; }
+
+    body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+      line-height: 1.5;
+    }
+
+    .mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* ─── Header ─────────────────────────────────────────── */
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 16px 0;
+    }
+    .header-inner {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .logo-area { display: flex; align-items: center; gap: 10px; }
+    .logo-icon {
+      width: 32px; height: 32px; border-radius: 8px;
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+    }
+    .logo-title {
+      font-size: 18px; font-weight: 700; letter-spacing: -0.5px;
+      background: linear-gradient(135deg, var(--text), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .logo-sub { font-size: 11px; color: var(--text-dim); margin-top: -2px; }
+
+    .status-badge {
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 20px;
+      font-size: 11px; font-weight: 600;
+    }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; }
+
+    /* ─── Main ───────────────────────────────────────────── */
+    main { max-width: 900px; margin: 0 auto; padding: 32px 24px; }
+
+    .section-label {
+      display: block; font-size: 12px; font-weight: 600;
+      color: var(--text-muted); margin-bottom: 8px;
+      letter-spacing: 0.5px; text-transform: uppercase;
+    }
+
+    .input-box {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      transition: border-color 0.2s;
+    }
+    .input-box:focus-within { border-color: var(--border-focus); }
+
+    textarea {
+      width: 100%; padding: 16px 18px;
+      background: transparent; border: none;
+      color: var(--text); font-size: 14px; line-height: 1.7;
+      font-family: 'IBM Plex Sans', sans-serif;
+      resize: vertical; min-height: 120px;
+      outline: none;
+    }
+    textarea::placeholder { color: var(--text-dim); }
+
+    .input-footer {
+      display: flex; align-items: center;
+      justify-content: space-between;
+      padding: 10px 18px;
+      border-top: 1px solid var(--border);
+    }
+    .char-count { font-size: 11px; color: var(--text-dim); }
+
+    .btn-verify {
+      padding: 8px 20px; border-radius: 6px;
+      background: var(--accent); color: white; border: none;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      font-family: 'IBM Plex Sans', sans-serif;
+      transition: all 0.2s;
+    }
+    .btn-verify:hover { filter: brightness(1.15); }
+    .btn-verify:disabled { background: var(--text-dim); cursor: not-allowed; }
+
+    .examples { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .examples span { font-size: 11px; color: var(--text-dim); margin-right: 4px; }
+    .btn-example {
+      padding: 4px 10px; border-radius: 4px;
+      background: transparent; border: 1px solid var(--border);
+      color: var(--text-muted); font-size: 11px; cursor: pointer;
+      font-family: 'IBM Plex Sans', sans-serif;
+      transition: all 0.15s;
+    }
+    .btn-example:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ─── Error ──────────────────────────────────────────── */
+    .error-box {
+      padding: 12px 16px; border-radius: 8px;
+      background: var(--red-dim); border: 1px solid var(--red);
+      color: var(--red); font-size: 13px; margin-bottom: 24px;
+    }
+
+    /* ─── Loading ────────────────────────────────────────── */
+    .loading { display: flex; align-items: center; gap: 12px; padding: 40px 0; }
+    .loading-dots { display: flex; gap: 4px; }
+    .loading-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--accent);
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    .loading-dot:nth-child(2) { animation-delay: 0.15s; }
+    .loading-dot:nth-child(3) { animation-delay: 0.3s; }
+    .loading-text { font-size: 13px; color: var(--text-muted); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.3; transform: scale(0.8); }
+      50% { opacity: 1; transform: scale(1); }
+    }
+
+    /* ─── Results ────────────────────────────────────────── */
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .results { animation: fadeIn 0.3s ease; }
+
+    .score-panel {
+      display: flex; align-items: center; gap: 28px;
+      margin-bottom: 28px; padding: 24px;
+      background: var(--surface); border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .score-ring { position: relative; }
+    .score-ring svg { transform: rotate(-90deg); }
+    .score-value {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+    }
+    .score-number { font-size: 32px; font-weight: 700; }
+    .score-label {
+      font-size: 10px; color: var(--text-muted);
+      letter-spacing: 1.5px; text-transform: uppercase; margin-top: 2px;
+    }
+
+    .stats-bar { display: flex; gap: 6px; flex-wrap: wrap; }
+    .stat-chip {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 12px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 6px;
+    }
+    .stat-label { font-size: 11px; color: var(--text-muted); }
+    .stat-value { font-size: 13px; font-weight: 700; }
+
+    /* ─── Claim Cards ────────────────────────────────────── */
+    .claim-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 18px;
+      cursor: pointer;
+      transition: all 0.2s;
+      animation: slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+    .claim-card:hover { background: var(--surface-hover); }
+    .claim-card.status-supported { border-left: 3px solid var(--green); }
+    .claim-card.status-contradicted { border-left: 3px solid var(--red); }
+    .claim-card.status-unverifiable { border-left: 3px solid var(--yellow); }
+    .claim-card.status-partially_supported { border-left: 3px solid var(--purple); }
+
+    .claim-header { display: flex; align-items: center; gap: 12px; }
+    .claim-icon {
+      width: 28px; height: 28px; border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700; flex-shrink: 0;
+    }
+    .claim-text { flex: 1; font-size: 13px; line-height: 1.5; min-width: 0; }
+    .claim-meta { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .status-tag {
+      font-size: 11px; padding: 3px 8px; border-radius: 4px;
+      font-weight: 600;
+    }
+    .confidence-value { font-size: 11px; color: var(--text-muted); }
+    .expand-arrow {
+      font-size: 10px; color: var(--text-dim);
+      transition: transform 0.2s;
+    }
+    .expand-arrow.open { transform: rotate(180deg); }
+
+    .claim-details {
+      margin-top: 12px; padding-top: 12px;
+      border-top: 1px solid var(--border);
+      font-size: 12px; color: var(--text-muted); line-height: 1.6;
+    }
+    .detail-label {
+      color: var(--text-dim); font-weight: 600;
+      font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+    }
+    .evidence-block {
+      margin-top: 6px; padding: 8px 10px;
+      background: var(--bg); border-radius: 4px;
+      font-size: 11px; line-height: 1.5;
+      border-left: 2px solid var(--text-dim);
+    }
+    .evidence-source { color: var(--text-dim); font-size: 10px; }
+
+    /* ─── Empty State ────────────────────────────────────── */
+    .empty-state {
+      text-align: center; padding: 60px 0;
+      color: var(--text-dim); font-size: 13px;
+    }
+    .empty-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.4; }
+
+    /* ─── Footer ─────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 16px 0; margin-top: 40px; text-align: center;
+      font-size: 11px; color: var(--text-dim);
+    }
+
+    /* ─── Responsive ─────────────────────────────────────── */
+    @media (max-width: 640px) {
+      .score-panel { flex-direction: column; text-align: center; }
+      .header-inner { flex-direction: column; gap: 10px; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-inner">
+      <div class="logo-area">
+        <div class="logo-icon">🔍</div>
+        <div>
+          <div class="logo-title">TruthLens</div>
+          <div class="logo-sub">LLM Hallucination Detection Engine</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span id="vectorCount" class="mono" style="font-size:11px;color:var(--text-dim);"></span>
+        <div id="statusBadge" class="status-badge" style="background:var(--yellow-dim);border:1px solid var(--yellow);">
+          <div class="status-dot" style="background:var(--yellow);"></div>
+          <span style="color:var(--yellow);">Checking…</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Input -->
+    <div style="margin-bottom:32px;">
+      <label class="section-label">Paste LLM response to verify</label>
+      <div class="input-box">
+        <textarea id="inputText" placeholder="The Eiffel Tower is 324 meters tall and was built in 1889…" rows="5"></textarea>
+        <div class="input-footer">
+          <span class="char-count" id="charCount">⌘+Enter to verify</span>
+          <button class="btn-verify" id="verifyBtn" disabled onclick="handleVerify()">Verify Claims</button>
+        </div>
+      </div>
+      <div class="examples">
+        <span>Try:</span>
+        <button class="btn-example" onclick="loadExample(0)">Eiffel Tower</button>
+        <button class="btn-example" onclick="loadExample(1)">Great Wall</button>
+        <button class="btn-example" onclick="loadExample(2)">Python</button>
+      </div>
+    </div>
+
+    <div id="errorBox" class="error-box" style="display:none;"></div>
+    <div id="loadingBox" class="loading" style="display:none;">
+      <div class="loading-dots"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div></div>
+      <span class="loading-text">Extracting claims, retrieving evidence, cross-checking…</span>
+    </div>
+    <div id="results"></div>
+    <div id="emptyState" class="empty-state">
+      <div class="empty-icon">🔬</div>
+      <p>Paste any LLM-generated text above to check for hallucinations</p>
+      <p style="font-size:11px;margin-top:4px;">Claims are extracted, evidence is retrieved from FAISS, and each claim is cross-verified</p>
+    </div>
+  </main>
+
+  <footer>TruthLens — FAISS + Ollama &bull; Built with FastAPI &amp; vanilla JS</footer>
+
+  <script>
+    const API = "http://localhost:8000";
+    let serverConnected = false;
+    let indexStats = null;
+
+    const examples = [
+      "The Eiffel Tower is 324 meters tall and was built in 1889 for the World's Fair in Paris, France. It is made of wrought iron.",
+      "The Great Wall of China is over 13,000 miles long, was built during the Qin dynasty, and is visible from space with the naked eye.",
+      "Python was created by Guido van Rossum and first released in 1995. It is a statically typed language that uses curly braces for code blocks.",
+    ];
+
+    const statusConfig = {
+      supported:           { icon: "✓", label: "Supported",   color: "var(--green)",  bg: "var(--green-dim)" },
+      contradicted:        { icon: "✗", label: "Contradicted", color: "var(--red)",    bg: "var(--red-dim)" },
+      unverifiable:        { icon: "?", label: "Unverifiable", color: "var(--yellow)", bg: "var(--yellow-dim)" },
+      partially_supported: { icon: "~", label: "Partial",      color: "var(--purple)", bg: "var(--purple-dim)" },
+    };
+
+    // ── Init ──────────────────────────────────────────────
+    const inputEl = document.getElementById("inputText");
+    const btnEl = document.getElementById("verifyBtn");
+
+    inputEl.addEventListener("input", () => {
+      const len = inputEl.value.length;
+      document.getElementById("charCount").textContent = len > 0 ? `${len} chars` : "⌘+Enter to verify";
+      btnEl.disabled = !inputEl.value.trim() || !serverConnected;
+    });
+
+    inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleVerify();
+    });
+
+    // ── Server check ──────────────────────────────────────
+    async function checkServer() {
+      const badge = document.getElementById("statusBadge");
+      try {
+        const r = await fetch(`${API}/health`);
+        const d = await r.json();
+        serverConnected = true;
+        badge.innerHTML = `<div class="status-dot" style="background:var(--green)"></div><span style="color:var(--green);font-weight:600;font-size:11px">Ollama Connected</span>`;
+        badge.style.background = "var(--green-dim)";
+        badge.style.border = "1px solid var(--green)";
+
+        const sr = await fetch(`${API}/stats`);
+        indexStats = await sr.json();
+        document.getElementById("vectorCount").textContent = `${indexStats?.index?.num_vectors || 0} vectors indexed`;
+
+        btnEl.disabled = !inputEl.value.trim();
+      } catch {
+        badge.innerHTML = `<div class="status-dot" style="background:var(--red)"></div><span style="color:var(--red);font-weight:600;font-size:11px">Server Offline</span>`;
+        badge.style.background = "var(--red-dim)";
+        badge.style.border = "1px solid var(--red)";
+      }
+    }
+    checkServer();
+
+    function loadExample(i) {
+      inputEl.value = examples[i];
+      inputEl.dispatchEvent(new Event("input"));
+    }
+
+    // ── Verify ────────────────────────────────────────────
+    async function handleVerify() {
+      const text = inputEl.value.trim();
+      if (!text || !serverConnected) return;
+
+      document.getElementById("errorBox").style.display = "none";
+      document.getElementById("emptyState").style.display = "none";
+      document.getElementById("results").innerHTML = "";
+      document.getElementById("loadingBox").style.display = "flex";
+      btnEl.disabled = true;
+      btnEl.textContent = "Verifying…";
+
+      try {
+        const res = await fetch(`${API}/verify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ llm_response: text }),
+        });
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        const data = await res.json();
+        renderResults(data);
+      } catch (e) {
+        const errBox = document.getElementById("errorBox");
+        errBox.textContent = e.message === "Failed to fetch"
+          ? "Cannot reach the TruthLens server. Make sure it's running on localhost:8000."
+          : e.message;
+        errBox.style.display = "block";
+      } finally {
+        document.getElementById("loadingBox").style.display = "none";
+        btnEl.disabled = false;
+        btnEl.textContent = "Verify Claims";
+      }
+    }
+
+    // ── Render ────────────────────────────────────────────
+    function renderResults(data) {
+      const container = document.getElementById("results");
+      const score = data.overall_reliability_score;
+      const color = score >= 0.7 ? "var(--green)" : score >= 0.4 ? "var(--yellow)" : "var(--red)";
+      const pct = Math.round(score * 100);
+
+      // Score ring SVG
+      const size = 140, r = (size - 16) / 2, circ = 2 * Math.PI * r;
+      const offset = circ - score * circ;
+
+      let html = `
+        <div class="results">
+          <div class="score-panel">
+            <div class="score-ring" style="width:${size}px;height:${size}px;">
+              <svg width="${size}" height="${size}">
+                <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="var(--border)" stroke-width="6"/>
+                <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${color}" stroke-width="6"
+                  stroke-linecap="round" stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
+                  style="transition:stroke-dashoffset 1.2s cubic-bezier(0.4,0,0.2,1)"/>
+              </svg>
+              <div class="score-value">
+                <span class="score-number mono" style="color:${color}">${pct}%</span>
+                <span class="score-label">reliability</span>
+              </div>
+            </div>
+            <div style="flex:1;">
+              <h3 style="font-size:16px;font-weight:600;margin-bottom:4px;">Verification Report</h3>
+              <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">
+                ${data.total_claims} claims extracted and cross-checked against ${indexStats?.index?.num_vectors || "the"} knowledge base vectors
+              </p>
+              <div class="stats-bar">
+                ${statChip("Claims", data.total_claims, "var(--accent)")}
+                ${statChip("Supported", data.supported_claims, "var(--green)")}
+                ${statChip("Contradicted", data.contradicted_claims, "var(--red)")}
+                ${statChip("Unverifiable", data.unverifiable_claims, "var(--yellow)")}
+                ${statChip("Time", (data.verification_time_ms/1000).toFixed(1)+"s", "var(--text-muted)")}
+              </div>
+            </div>
+          </div>
+
+          <span class="section-label" style="margin-bottom:8px;display:block;">Claim-by-claim analysis</span>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+      `;
+
+      data.claim_verifications.forEach((v, i) => {
+        const cfg = statusConfig[v.status] || statusConfig.unverifiable;
+        const cardId = `claim-${i}`;
+        html += `
+          <div class="claim-card status-${v.status}" id="${cardId}" onclick="toggleClaim('${cardId}')" style="animation-delay:${i*80}ms">
+            <div class="claim-header">
+              <div class="claim-icon mono" style="background:${cfg.bg};color:${cfg.color};">${cfg.icon}</div>
+              <div class="claim-text">${escHtml(v.claim.text)}</div>
+              <div class="claim-meta">
+                <span class="status-tag mono" style="color:${cfg.color};background:${cfg.bg};">${cfg.label}</span>
+                <span class="confidence-value mono">${Math.round(v.confidence*100)}%</span>
+                <span class="expand-arrow" id="${cardId}-arrow">▼</span>
+              </div>
+            </div>
+            <div class="claim-details" id="${cardId}-details" style="display:none;">
+              ${v.reasoning ? `<span class="detail-label">Reasoning</span><p style="margin:6px 0 0">${escHtml(v.reasoning)}</p>` : ""}
+              ${v.evidence && v.evidence.length > 0 ? `
+                <div style="margin-top:10px;">
+                  <span class="detail-label">Evidence (${v.evidence.length} sources)</span>
+                  ${v.evidence.slice(0,2).map(e => `
+                    <div class="evidence-block">
+                      <span class="evidence-source">[${escHtml(e.chunk.source)}]</span>
+                      ${escHtml(e.chunk.text.slice(0,200))}${e.chunk.text.length > 200 ? "…" : ""}
+                    </div>
+                  `).join("")}
+                </div>
+              ` : ""}
+            </div>
+          </div>
+        `;
+      });
+
+      html += `</div></div>`;
+      container.innerHTML = html;
+
+      // Animate score ring (start from full offset, let CSS transition handle it)
+      requestAnimationFrame(() => {
+        const circle = container.querySelector(".score-ring svg circle:nth-child(2)");
+        if (circle) {
+          circle.style.strokeDashoffset = circ;
+          requestAnimationFrame(() => { circle.style.strokeDashoffset = offset; });
+        }
+      });
+    }
+
+    function toggleClaim(id) {
+      const details = document.getElementById(id + "-details");
+      const arrow = document.getElementById(id + "-arrow");
+      if (details.style.display === "none") {
+        details.style.display = "block";
+        arrow.classList.add("open");
+      } else {
+        details.style.display = "none";
+        arrow.classList.remove("open");
+      }
+    }
+
+    function statChip(label, value, color) {
+      return `<div class="stat-chip"><span class="stat-label">${label}</span><span class="stat-value mono" style="color:${color}">${value}</span></div>`;
+    }
+
+    function escHtml(s) {
+      const d = document.createElement("div");
+      d.textContent = s;
+      return d.innerHTML;
+    }
+  </script>
+</body>
+</html>

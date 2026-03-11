@@ -1,0 +1,1915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TruthLens — LLM Hallucination Detection</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --bg: #060810;
+      --surface: #0d1117;
+      --surface2: #131a24;
+      --border: #1a2333;
+      --border2: #243044;
+      --text: #dce8f5;
+      --muted: #516478;
+      --dim: #2d3f52;
+      --blue: #3d8ef0;
+      --blue-glow: rgba(61,142,240,0.12);
+      --blue-dim: rgba(61,142,240,0.06);
+      --green: #2dd98f;
+      --green-dim: rgba(45,217,143,0.1);
+      --red: #f05252;
+      --red-dim: rgba(240,82,82,0.1);
+      --yellow: #f0c252;
+      --yellow-dim: rgba(240,194,82,0.1);
+      --purple: #a78bfa;
+      --purple-dim: rgba(167,139,250,0.1);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 400;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* ── Noise overlay ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.35;
+    }
+
+    /* ── Grid background ── */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 48px 48px;
+      opacity: 0.3;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Glow blob ── */
+    .glow-blob {
+      position: fixed;
+      top: -200px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 900px;
+      height: 600px;
+      background: radial-gradient(ellipse at center, rgba(61,142,240,0.07) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Layout ── */
+    .wrap {
+      position: relative;
+      z-index: 1;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 32px;
+    }
+
+    /* ── Nav ── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      border-bottom: 1px solid var(--border);
+      background: rgba(6,8,16,0.85);
+      backdrop-filter: blur(12px);
+    }
+
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 32px;
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+    }
+
+    .nav-logo-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: 7px;
+      background: linear-gradient(135deg, var(--blue), #7c3aed);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+
+    .nav-logo-text {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 17px;
+      color: var(--text);
+      letter-spacing: -0.3px;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 28px;
+    }
+
+    .nav-links a {
+      font-size: 13px;
+      color: var(--muted);
+      text-decoration: none;
+      transition: color 0.2s;
+      font-weight: 500;
+    }
+    .nav-links a:hover { color: var(--text); }
+
+    .nav-cta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 16px;
+      border-radius: 6px;
+      background: var(--blue);
+      color: #fff !important;
+      font-size: 13px !important;
+      font-weight: 600 !important;
+      transition: opacity 0.2s !important;
+    }
+    .nav-cta:hover { opacity: 0.85; }
+
+    /* ── Hero ── */
+    .hero {
+      padding: 160px 0 100px;
+      text-align: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 14px;
+      border-radius: 100px;
+      border: 1px solid var(--border2);
+      background: var(--surface);
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 32px;
+      letter-spacing: 0.5px;
+    }
+
+    .hero-badge span {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: blink 2s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .hero-title {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: clamp(52px, 7vw, 88px);
+      line-height: 1.0;
+      letter-spacing: -3px;
+      margin-bottom: 24px;
+    }
+
+    .hero-title .line1 { display: block; color: var(--text); }
+    .hero-title .line2 {
+      display: block;
+      background: linear-gradient(90deg, var(--blue), #8b5cf6, var(--blue));
+      background-size: 200% auto;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: gradientMove 4s linear infinite;
+    }
+
+    @keyframes gradientMove {
+      0% { background-position: 0% center; }
+      100% { background-position: 200% center; }
+    }
+
+    .hero-sub {
+      font-size: 18px;
+      color: var(--muted);
+      max-width: 560px;
+      margin: 0 auto 40px;
+      line-height: 1.7;
+      font-weight: 300;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 13px 28px;
+      border-radius: 8px;
+      background: var(--blue);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s;
+      box-shadow: 0 0 30px rgba(61,142,240,0.25);
+    }
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 0 40px rgba(61,142,240,0.35);
+    }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 13px 28px;
+      border-radius: 8px;
+      border: 1px solid var(--border2);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 500;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .btn-secondary:hover {
+      border-color: var(--blue);
+      background: var(--blue-dim);
+    }
+
+    /* ── Pipeline Visual ── */
+    .pipeline-section {
+      padding: 80px 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .section-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--blue);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+    .section-label::before {
+      content: '';
+      display: block;
+      width: 20px;
+      height: 1px;
+      background: var(--blue);
+    }
+
+    .section-title {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: clamp(28px, 4vw, 42px);
+      letter-spacing: -1.5px;
+      margin-bottom: 14px;
+    }
+
+    .section-desc {
+      font-size: 15px;
+      color: var(--muted);
+      max-width: 520px;
+      line-height: 1.7;
+      margin-bottom: 56px;
+      font-weight: 300;
+    }
+
+    .pipeline-flow {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0;
+      position: relative;
+    }
+
+    .pipeline-flow::before {
+      content: '';
+      position: absolute;
+      top: 36px;
+      left: 12%;
+      right: 12%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border2), var(--blue), var(--border2), transparent);
+    }
+
+    .pipeline-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 0 12px;
+      position: relative;
+    }
+
+    .step-num {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      border: 1px solid var(--border2);
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'DM Mono', monospace;
+      font-size: 22px;
+      margin-bottom: 20px;
+      position: relative;
+      z-index: 2;
+      transition: all 0.3s;
+    }
+
+    .pipeline-step:hover .step-num {
+      border-color: var(--blue);
+      background: var(--blue-dim);
+      box-shadow: 0 0 24px rgba(61,142,240,0.2);
+    }
+
+    .step-title {
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 8px;
+      letter-spacing: -0.3px;
+    }
+
+    .step-desc {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    /* ── UI Preview ── */
+    .preview-section {
+      padding: 80px 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .preview-frame {
+      border-radius: 14px;
+      border: 1px solid var(--border2);
+      background: var(--surface);
+      overflow: hidden;
+      box-shadow:
+        0 0 0 1px var(--border),
+        0 32px 80px rgba(0,0,0,0.6),
+        0 0 60px rgba(61,142,240,0.05);
+    }
+
+    .preview-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .dot-red { background: #ff5f56; }
+    .dot-yellow { background: #ffbd2e; }
+    .dot-green { background: #27c93f; }
+
+    .preview-url {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .preview-url-pill {
+      padding: 4px 16px;
+      border-radius: 100px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .preview-content {
+      padding: 28px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .preview-input-area {
+      background: var(--bg);
+      border: 1px solid var(--border2);
+      border-radius: 10px;
+      padding: 16px;
+    }
+
+    .preview-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    .preview-text {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 14px;
+    }
+
+    .preview-text em {
+      color: var(--text);
+      font-style: normal;
+    }
+
+    .preview-btn {
+      display: inline-block;
+      padding: 7px 16px;
+      background: var(--blue);
+      color: #fff;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .preview-results-area {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .preview-score-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px;
+      background: var(--bg);
+      border: 1px solid var(--border2);
+      border-radius: 10px;
+      margin-bottom: 2px;
+    }
+
+    .score-ring-sm {
+      width: 52px;
+      height: 52px;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .ring-label {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 13px;
+      color: var(--green);
+    }
+
+    .ring-sub {
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .stat-chips {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .chip {
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      font-weight: 500;
+    }
+
+    .chip-green { background: var(--green-dim); color: var(--green); }
+    .chip-red { background: var(--red-dim); color: var(--red); }
+    .chip-yellow { background: var(--yellow-dim); color: var(--yellow); }
+    .chip-blue { background: var(--blue-glow); color: var(--blue); }
+
+    .claim-mock {
+      padding: 10px 12px;
+      border-radius: 7px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--border2);
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.5;
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+
+    .claim-mock.supported { border-left-color: var(--green); }
+    .claim-mock.contradicted { border-left-color: var(--red); }
+    .claim-mock.partial { border-left-color: var(--purple); }
+
+    .claim-icon {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .claim-icon.s { color: var(--green); }
+    .claim-icon.c { color: var(--red); }
+    .claim-icon.p { color: var(--purple); }
+
+    /* ── Features Grid ── */
+    .features-section {
+      padding: 80px 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    .feature-card {
+      padding: 32px 28px;
+      background: var(--surface);
+      transition: background 0.25s;
+    }
+    .feature-card:hover { background: var(--surface2); }
+
+    .feature-icon {
+      font-size: 24px;
+      margin-bottom: 16px;
+    }
+
+    .feature-title {
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 15px;
+      margin-bottom: 8px;
+      letter-spacing: -0.3px;
+    }
+
+    .feature-desc {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.65;
+      font-weight: 300;
+    }
+
+    /* ── Tech Stack ── */
+    .stack-section {
+      padding: 80px 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .stack-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+    }
+
+    .stack-group {
+      padding: 28px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+
+    .stack-group-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--blue);
+      margin-bottom: 18px;
+    }
+
+    .stack-items {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .stack-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+    }
+
+    .stack-name {
+      font-family: 'DM Mono', monospace;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .stack-role {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    /* ── Perf Metrics ── */
+    .metrics-section {
+      padding: 80px 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    .metric-card {
+      padding: 28px 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      text-align: center;
+      transition: border-color 0.25s;
+    }
+    .metric-card:hover { border-color: var(--border2); }
+
+    .metric-value {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 38px;
+      letter-spacing: -2px;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+
+    .metric-value.blue { color: var(--blue); }
+    .metric-value.green { color: var(--green); }
+    .metric-value.purple { color: var(--purple); }
+    .metric-value.yellow { color: var(--yellow); }
+
+    .metric-label {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* ── Code Block ── */
+    .code-section {
+      padding: 80px 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .code-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    .code-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .code-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+
+    .code-title {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.5px;
+    }
+
+    .code-lang {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      color: var(--dim);
+      letter-spacing: 0.5px;
+    }
+
+    pre {
+      padding: 20px 18px;
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+      line-height: 1.7;
+      color: var(--muted);
+      overflow-x: auto;
+    }
+
+    .kw { color: #7c9fe8; }
+    .str { color: #82cfb3; }
+    .cmt { color: var(--dim); font-style: italic; }
+    .fn { color: #c9a5f7; }
+    .key { color: var(--text); }
+
+    /* ── CTA ── */
+    .cta-section {
+      padding: 100px 0;
+      position: relative;
+      z-index: 1;
+      text-align: center;
+    }
+
+    .cta-box {
+      padding: 64px;
+      border-radius: 20px;
+      border: 1px solid var(--border2);
+      background: linear-gradient(135deg, var(--surface) 0%, var(--surface2) 100%);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cta-box::before {
+      content: '';
+      position: absolute;
+      top: -100px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 600px;
+      height: 300px;
+      background: radial-gradient(ellipse, rgba(61,142,240,0.08), transparent 70%);
+      pointer-events: none;
+    }
+
+    .cta-title {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: clamp(28px, 4vw, 44px);
+      letter-spacing: -2px;
+      margin-bottom: 16px;
+    }
+
+    .cta-desc {
+      font-size: 16px;
+      color: var(--muted);
+      margin-bottom: 36px;
+      font-weight: 300;
+    }
+
+    .cta-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 32px 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .footer-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .footer-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .footer-logo-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 5px;
+      background: linear-gradient(135deg, var(--blue), #7c3aed);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+    }
+
+    .footer-text {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .footer-text strong {
+      color: var(--text);
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+    }
+
+    .footer-right {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .footer-right a {
+      font-size: 12px;
+      color: var(--muted);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .footer-right a:hover { color: var(--text); }
+
+    /* ── Animations ── */
+    .fade-up {
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.6s ease, transform 0.6s ease;
+    }
+    .fade-up.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ── Demo Section ── */
+    .demo-section {
+      padding: 80px 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .demo-shell {
+      border-radius: 16px;
+      border: 1px solid var(--border2);
+      background: var(--surface);
+      overflow: hidden;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.5), 0 0 60px rgba(61,142,240,0.06);
+    }
+
+    .demo-topbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+
+    .demo-topbar-title {
+      flex: 1;
+      text-align: center;
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.5px;
+    }
+
+    .demo-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      font-weight: 500;
+    }
+    .demo-status.online { background: var(--green-dim); color: var(--green); border: 1px solid rgba(45,217,143,0.2); }
+    .demo-status.loading { background: var(--yellow-dim); color: var(--yellow); border: 1px solid rgba(240,194,82,0.2); }
+
+    .demo-status-dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .demo-status.online .demo-status-dot { animation: blink 2s infinite; }
+    .demo-status.loading .demo-status-dot { animation: blink 0.6s infinite; }
+
+    .demo-body {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      min-height: 420px;
+    }
+
+    .demo-left {
+      padding: 28px;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .demo-input-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+
+    .demo-textarea {
+      width: 100%;
+      min-height: 140px;
+      padding: 14px;
+      background: var(--bg);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      line-height: 1.6;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .demo-textarea:focus { border-color: var(--blue); }
+
+    .demo-examples {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .demo-example-label {
+      font-size: 11px;
+      color: var(--dim);
+    }
+
+    .demo-example-btn {
+      padding: 4px 10px;
+      border-radius: 4px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 11px;
+      cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+      transition: all 0.15s;
+    }
+    .demo-example-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+    .demo-api-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .demo-api-input {
+      flex: 1;
+      padding: 9px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border2);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .demo-api-input:focus { border-color: var(--blue); }
+    .demo-api-input::placeholder { color: var(--dim); }
+
+    .demo-verify-btn {
+      padding: 9px 22px;
+      border-radius: 6px;
+      background: var(--blue);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .demo-verify-btn:hover { opacity: 0.85; transform: translateY(-1px); }
+    .demo-verify-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .demo-right {
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      overflow-y: auto;
+      max-height: 520px;
+    }
+
+    .demo-empty {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      color: var(--dim);
+      gap: 10px;
+    }
+
+    .demo-empty-icon { font-size: 36px; opacity: 0.35; }
+    .demo-empty-text { font-size: 12px; line-height: 1.6; }
+
+    .demo-loading {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+    }
+
+    .demo-loading-dots {
+      display: flex;
+      gap: 5px;
+    }
+
+    .demo-loading-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--blue);
+      animation: demoPulse 1.2s ease-in-out infinite;
+    }
+    .demo-loading-dot:nth-child(2) { animation-delay: 0.15s; }
+    .demo-loading-dot:nth-child(3) { animation-delay: 0.3s; }
+
+    @keyframes demoPulse {
+      0%, 100% { opacity: 0.2; transform: scale(0.8); }
+      50% { opacity: 1; transform: scale(1); }
+    }
+
+    .demo-loading-text { font-size: 12px; color: var(--muted); }
+
+    .demo-loading-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      width: 100%;
+      max-width: 240px;
+    }
+
+    .demo-loading-step {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--dim);
+      font-family: 'DM Mono', monospace;
+      transition: color 0.3s;
+    }
+    .demo-loading-step.active { color: var(--blue); }
+    .demo-loading-step.done { color: var(--green); }
+
+    .demo-step-icon { font-size: 10px; width: 14px; text-align: center; }
+
+    .demo-score-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 16px;
+      background: var(--bg);
+      border: 1px solid var(--border2);
+      border-radius: 10px;
+      animation: fadeSlideIn 0.4s ease both;
+    }
+
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .demo-score-ring {
+      flex-shrink: 0;
+    }
+
+    .demo-score-info { flex: 1; }
+
+    .demo-score-title {
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+
+    .demo-score-sub {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .demo-score-chips {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+
+    .demo-claims-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+
+    .demo-claim-card {
+      padding: 10px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      animation: fadeSlideIn 0.4s ease both;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .demo-claim-card:hover { background: var(--surface2); }
+
+    .demo-claim-icon {
+      width: 22px; height: 22px;
+      border-radius: 5px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+      font-family: 'DM Mono', monospace;
+      flex-shrink: 0;
+    }
+
+    .demo-claim-body { flex: 1; min-width: 0; }
+
+    .demo-claim-text {
+      font-size: 12px;
+      color: var(--text);
+      line-height: 1.5;
+      margin-bottom: 5px;
+    }
+
+    .demo-claim-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .demo-claim-reasoning {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.5;
+      display: none;
+    }
+    .demo-claim-card.expanded .demo-claim-reasoning { display: block; }
+
+    .demo-error {
+      padding: 12px 14px;
+      background: var(--red-dim);
+      border: 1px solid rgba(240,82,82,0.2);
+      border-radius: 8px;
+      font-size: 12px;
+      color: var(--red);
+      line-height: 1.5;
+    }
+
+    .demo-api-hint {
+      font-size: 11px;
+      color: var(--dim);
+      line-height: 1.5;
+    }
+    .demo-api-hint a { color: var(--blue); text-decoration: none; }
+    .demo-api-hint a:hover { text-decoration: underline; }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      .pipeline-flow { grid-template-columns: 1fr 1fr; }
+      .pipeline-flow::before { display: none; }
+      .features-grid { grid-template-columns: 1fr; }
+      .stack-grid { grid-template-columns: 1fr; }
+      .metrics-grid { grid-template-columns: 1fr 1fr; }
+      .code-grid { grid-template-columns: 1fr; }
+      .preview-content { grid-template-columns: 1fr; }
+      .nav-links { display: none; }
+      .cta-box { padding: 40px 24px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="glow-blob"></div>
+
+<!-- ─── Nav ─────────────────────────────────────────────── -->
+<nav>
+  <div class="nav-inner">
+    <a href="#" class="nav-logo">
+      <div class="nav-logo-icon">🔍</div>
+      <span class="nav-logo-text">TruthLens</span>
+    </a>
+    <div class="nav-links">
+      <a href="#how-it-works">How It Works</a>
+      <a href="#demo">Live Demo</a>
+      <a href="#features">Features</a>
+      <a href="#stack">Stack</a>
+      <a href="#api">API</a>
+      <a href="https://github.com/MrSmartypants7/truthlens" class="nav-cta">
+        ★ GitHub
+      </a>
+    </div>
+  </div>
+</nav>
+
+<!-- ─── Hero ─────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-badge">
+      <span></span>
+      100% Local · No API Keys · FAISS + Ollama
+    </div>
+    <h1 class="hero-title">
+      <span class="line1">Catch LLM</span>
+      <span class="line2">Hallucinations.</span>
+    </h1>
+    <p class="hero-sub">
+      TruthLens extracts factual claims from any LLM response, retrieves evidence from a FAISS vector store, and cross-verifies each claim — in real time.
+    </p>
+    <div class="hero-actions">
+      <a href="https://github.com/MrSmartypants7/truthlens" class="btn-primary">
+        View on GitHub →
+      </a>
+      <a href="#how-it-works" class="btn-secondary">
+        See how it works
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Pipeline ─────────────────────────────────────────── -->
+<section class="pipeline-section" id="how-it-works">
+  <div class="wrap">
+    <div class="section-label">Pipeline</div>
+    <h2 class="section-title">Four steps, zero hallucinations.</h2>
+    <p class="section-desc">
+      Every claim in an LLM response is individually extracted, embedded, retrieved against ground-truth knowledge, and scored with confidence.
+    </p>
+    <div class="pipeline-flow">
+      <div class="pipeline-step fade-up">
+        <div class="step-num">📝</div>
+        <div class="step-title">Claim Extraction</div>
+        <p class="step-desc">LLM breaks the response into individual, verifiable factual claims</p>
+      </div>
+      <div class="pipeline-step fade-up" style="transition-delay:0.1s">
+        <div class="step-num">🔎</div>
+        <div class="step-title">Evidence Retrieval</div>
+        <p class="step-desc">Each claim is embedded and searched against the FAISS vector index</p>
+      </div>
+      <div class="pipeline-step fade-up" style="transition-delay:0.2s">
+        <div class="step-num">⚖️</div>
+        <div class="step-title">Cross-Verification</div>
+        <p class="step-desc">Secondary LLM prompt evaluates each claim against retrieved evidence</p>
+      </div>
+      <div class="pipeline-step fade-up" style="transition-delay:0.3s">
+        <div class="step-num">📊</div>
+        <div class="step-title">Reliability Score</div>
+        <p class="step-desc">Claims are classified with confidence scores and an overall score is computed</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── Live Demo ─────────────────────────────────────────── -->
+<section class="demo-section" id="demo">
+  <div class="wrap">
+    <div class="section-label">Live Demo</div>
+    <h2 class="section-title">Try it right now.</h2>
+    <p class="section-desc">
+      Paste any text and watch TruthLens extract claims and verify each one — powered by Claude, simulating the exact pipeline.
+    </p>
+
+    <div class="demo-shell fade-up">
+      <div class="demo-topbar">
+        <div class="dot dot-red"></div>
+        <div class="dot dot-yellow"></div>
+        <div class="dot dot-green"></div>
+        <div class="demo-topbar-title">TruthLens — Interactive Demo</div>
+        <div class="demo-status online" id="demoStatus">
+          <div class="demo-status-dot"></div>
+          Claude API
+        </div>
+      </div>
+
+      <div class="demo-body">
+        <div class="demo-left">
+          <div class="demo-input-label">LLM response to verify</div>
+          <textarea class="demo-textarea" id="demoInput" placeholder="Paste any text here — facts, summaries, AI-generated content…" rows="6"></textarea>
+
+          <div class="demo-examples">
+            <span class="demo-example-label">Try:</span>
+            <button class="demo-example-btn" onclick="setExample(0)">Eiffel Tower</button>
+            <button class="demo-example-btn" onclick="setExample(1)">Great Wall</button>
+            <button class="demo-example-btn" onclick="setExample(2)">Python lang</button>
+            <button class="demo-example-btn" onclick="setExample(3)">Solar System</button>
+          </div>
+
+          <div>
+            <div class="demo-input-label" style="margin-bottom:8px;">Anthropic API Key</div>
+            <div class="demo-api-row">
+              <input class="demo-api-input" id="apiKeyInput" type="password" placeholder="sk-ant-..." />
+              <button class="demo-verify-btn" id="verifyBtn" onclick="runDemo()">Verify →</button>
+            </div>
+            <p class="demo-api-hint" style="margin-top:8px;">
+              Your key is never stored — sent only directly to the
+              <a href="https://docs.anthropic.com" target="_blank">Anthropic API</a>.
+              Get one free at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a>.
+            </p>
+          </div>
+        </div>
+
+        <div class="demo-right" id="demoRight">
+          <div class="demo-empty" id="demoEmpty">
+            <div class="demo-empty-icon">🔬</div>
+            <div class="demo-empty-text">Results will appear here.<br/>Each claim is extracted and verified independently.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── UI Preview ────────────────────────────────────────── -->
+<section class="preview-section">
+  <div class="wrap">
+    <div class="section-label">Interface</div>
+    <h2 class="section-title">Built for clarity.</h2>
+    <p class="section-desc">
+      A dark, minimal UI delivers verification results claim-by-claim with animated score rings and expandable evidence panels.
+    </p>
+
+    <div class="preview-frame fade-up">
+      <div class="preview-bar">
+        <div class="dot dot-red"></div>
+        <div class="dot dot-yellow"></div>
+        <div class="dot dot-green"></div>
+        <div class="preview-url">
+          <div class="preview-url-pill">localhost:8000</div>
+        </div>
+      </div>
+      <div class="preview-content">
+        <!-- Left: Input -->
+        <div class="preview-input-area">
+          <div class="preview-label">Paste LLM response to verify</div>
+          <p class="preview-text">
+            The <em>Eiffel Tower</em> is <em>324 meters tall</em> and was built in <em>1889</em> for the World's Fair in Paris. It is made of <em>wrought iron</em> and visible from space.
+          </p>
+          <div class="preview-btn">Verify Claims</div>
+        </div>
+        <!-- Right: Results -->
+        <div class="preview-results-area">
+          <div class="preview-score-row">
+            <svg width="52" height="52" viewBox="0 0 52 52">
+              <circle cx="26" cy="26" r="20" fill="none" stroke="#1a2333" stroke-width="4"/>
+              <circle cx="26" cy="26" r="20" fill="none" stroke="#2dd98f" stroke-width="4"
+                stroke-dasharray="125.6" stroke-dashoffset="37.7"
+                stroke-linecap="round" transform="rotate(-90 26 26)"/>
+            </svg>
+            <div>
+              <div class="ring-label">70%</div>
+              <div class="ring-sub" style="margin-bottom:8px;">reliability</div>
+              <div class="stat-chips">
+                <span class="chip chip-green">3 Supported</span>
+                <span class="chip chip-red">1 Contradicted</span>
+                <span class="chip chip-yellow">1 Unverifiable</span>
+              </div>
+            </div>
+          </div>
+          <div class="claim-mock supported">
+            <span class="claim-icon s">✓</span>
+            <span>Eiffel Tower is 324 meters tall, built in 1889 <span class="chip chip-green" style="display:inline;padding:1px 5px;font-size:10px;">94%</span></span>
+          </div>
+          <div class="claim-mock contradicted">
+            <span class="claim-icon c">✗</span>
+            <span>Visible from space with naked eye — no evidence supports this <span class="chip chip-red" style="display:inline;padding:1px 5px;font-size:10px;">91%</span></span>
+          </div>
+          <div class="claim-mock partial">
+            <span class="claim-icon p">~</span>
+            <span>Built for the World's Fair — partially supported <span class="chip chip-blue" style="display:inline;padding:1px 5px;font-size:10px;">78%</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Features ─────────────────────────────────────────── -->
+<section class="features-section" id="features">
+  <div class="wrap">
+    <div class="section-label">Features</div>
+    <h2 class="section-title">Production-ready, out of the box.</h2>
+    <p class="section-desc">Every layer — from ingestion to scoring — is designed for reliability and extensibility.</p>
+
+    <div class="features-grid fade-up">
+      <div class="feature-card">
+        <div class="feature-icon">⚡</div>
+        <div class="feature-title">Batched FAISS Search</div>
+        <p class="feature-desc">All claims are embedded and searched in a single batched call — not N sequential queries. Sub-300ms for cached queries.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🧠</div>
+        <div class="feature-title">Secondary Verification</div>
+        <p class="feature-desc">Claims are verified against retrieved external evidence — not self-verified by the same model that generated them.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔒</div>
+        <div class="feature-title">Fully Local</div>
+        <p class="feature-desc">Runs on Ollama with llama3.2 and nomic-embed-text. No API keys, no cloud calls, no cost per request.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📦</div>
+        <div class="feature-title">Embedding TTL Cache</div>
+        <p class="feature-desc">Repeated queries hit cache, saving ~200ms per call. Cache size and TTL are configurable via environment variables.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📈</div>
+        <div class="feature-title">Experiment Tracking</div>
+        <p class="feature-desc">Built-in benchmark logging with accuracy, precision, and recall across models. Queryable via <code style="font-family:'DM Mono',monospace;font-size:11px;color:var(--blue)">/experiments</code>.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🪵</div>
+        <div class="feature-title">Structured JSON Logging</div>
+        <p class="feature-desc">Production-grade observability with structlog. CloudWatch and Datadog compatible out of the box.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Metrics ───────────────────────────────────────────── -->
+<section class="metrics-section">
+  <div class="wrap">
+    <div class="metrics-grid">
+      <div class="metric-card fade-up">
+        <div class="metric-value blue">7</div>
+        <div class="metric-label">API endpoints including verify, ingest, benchmark & experiments</div>
+      </div>
+      <div class="metric-card fade-up" style="transition-delay:0.1s">
+        <div class="metric-value green">&lt;300ms</div>
+        <div class="metric-label">Verification time for cached queries with warm FAISS index</div>
+      </div>
+      <div class="metric-card fade-up" style="transition-delay:0.2s">
+        <div class="metric-value purple">22</div>
+        <div class="metric-label">Unit tests across standalone, chunker, vector store and API layers</div>
+      </div>
+      <div class="metric-card fade-up" style="transition-delay:0.3s">
+        <div class="metric-value yellow">768</div>
+        <div class="metric-label">Embedding dimensions via nomic-embed-text for high-precision retrieval</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Tech Stack ────────────────────────────────────────── -->
+<section class="stack-section" id="stack">
+  <div class="wrap">
+    <div class="section-label">Stack</div>
+    <h2 class="section-title">What's under the hood.</h2>
+    <p class="section-desc">A carefully chosen set of tools — fast, local, and production-grade.</p>
+
+    <div class="stack-grid fade-up">
+      <div class="stack-group">
+        <div class="stack-group-label">Backend</div>
+        <div class="stack-items">
+          <div class="stack-item">
+            <span class="stack-name">FastAPI</span>
+            <span class="stack-role">REST API & static file serving</span>
+          </div>
+          <div class="stack-item">
+            <span class="stack-name">FAISS</span>
+            <span class="stack-role">Vector similarity search</span>
+          </div>
+          <div class="stack-item">
+            <span class="stack-name">Ollama</span>
+            <span class="stack-role">Local LLM inference</span>
+          </div>
+          <div class="stack-item">
+            <span class="stack-name">Pydantic</span>
+            <span class="stack-role">Data validation & settings</span>
+          </div>
+          <div class="stack-item">
+            <span class="stack-name">structlog</span>
+            <span class="stack-role">Structured JSON logging</span>
+          </div>
+        </div>
+      </div>
+      <div class="stack-group">
+        <div class="stack-group-label">Frontend & Models</div>
+        <div class="stack-items">
+          <div class="stack-item">
+            <span class="stack-name">React</span>
+            <span class="stack-role">UI with hooks & animations</span>
+          </div>
+          <div class="stack-item">
+            <span class="stack-name">llama3.2</span>
+            <span class="stack-role">Claim extraction & verification (~2GB)</span>
+          </div>
+          <div class="stack-item">
+            <span class="stack-name">nomic-embed-text</span>
+            <span class="stack-role">768-dim text embeddings (~275MB)</span>
+          </div>
+          <div class="stack-item">
+            <span class="stack-name">Docker</span>
+            <span class="stack-role">Containerized deployment</span>
+          </div>
+          <div class="stack-item">
+            <span class="stack-name">pytest</span>
+            <span class="stack-role">22 unit & integration tests</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── API Preview ───────────────────────────────────────── -->
+<section class="code-section" id="api">
+  <div class="wrap">
+    <div class="section-label">API</div>
+    <h2 class="section-title">Simple to integrate.</h2>
+    <p class="section-desc">REST endpoints for verification, ingestion, benchmarking, and health checks.</p>
+
+    <div class="code-grid fade-up">
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-title">POST /verify</span>
+          <span class="code-lang">CURL</span>
+        </div>
+        <pre><span class="cmt"># Verify an LLM response</span>
+<span class="fn">curl</span> -X POST localhost:8000/verify \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{
+    "llm_response": "The Eiffel Tower
+      is 324 meters tall, built in
+      1889 for the World'\''s Fair."
+  }'</span></pre>
+      </div>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-title">Response</span>
+          <span class="code-lang">JSON</span>
+        </div>
+        <pre>{
+  <span class="key">"overall_reliability_score"</span>: <span class="str">0.82</span>,
+  <span class="key">"total_claims"</span>: <span class="str">3</span>,
+  <span class="key">"supported_claims"</span>: <span class="str">2</span>,
+  <span class="key">"claim_verifications"</span>: [{
+    <span class="key">"status"</span>: <span class="str">"supported"</span>,
+    <span class="key">"confidence"</span>: <span class="str">0.94</span>,
+    <span class="key">"reasoning"</span>: <span class="str">"Height confirmed..."</span>
+  }]
+}</pre>
+      </div>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-title">POST /ingest</span>
+          <span class="code-lang">CURL</span>
+        </div>
+        <pre><span class="cmt"># Add documents to knowledge base</span>
+<span class="fn">curl</span> -X POST localhost:8000/ingest \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{
+    "documents": [{
+      "text": "The Eiffel Tower
+        is 330m, built 1887-1889.",
+      "source": "wikipedia"
+    }]
+  }'</span></pre>
+      </div>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-title">Quick Start</span>
+          <span class="code-lang">BASH</span>
+        </div>
+        <pre><span class="cmt"># 1. Pull models</span>
+<span class="fn">ollama</span> pull llama3.2
+<span class="fn">ollama</span> pull nomic-embed-text
+
+<span class="cmt"># 2. Install & ingest demo data</span>
+<span class="fn">pip</span> install -r requirements.txt
+<span class="fn">python</span> scripts/demo.py
+
+<span class="cmt"># 3. Start the server</span>
+<span class="fn">uvicorn</span> app.main:app --reload</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── CTA ──────────────────────────────────────────────── -->
+<section class="cta-section">
+  <div class="wrap">
+    <div class="cta-box fade-up">
+      <h2 class="cta-title">Run it yourself.</h2>
+      <p class="cta-desc">Open source, MIT licensed, no cloud required. Clone and run in under five minutes.</p>
+      <div class="cta-actions">
+        <a href="https://github.com/MrSmartypants7/truthlens" class="btn-primary">★ View on GitHub</a>
+        <a href="#how-it-works" class="btn-secondary">Read the docs</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Footer ───────────────────────────────────────────── -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-left">
+      <div class="footer-logo-icon">🔍</div>
+      <span class="footer-text"><strong>TruthLens</strong> — FAISS + Ollama · FastAPI · React · MIT</span>
+    </div>
+    <div class="footer-right">
+      <a href="https://github.com/MrSmartypants7/truthlens">GitHub</a>
+      <a href="#how-it-works">Docs</a>
+      <a href="#api">API</a>
+    </div>
+  </div>
+</footer>
+
+
+
+
+<script>
+  // Scroll animations
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('visible'); });
+  }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+  document.querySelectorAll('.fade-up').forEach(el => observer.observe(el));
+
+  // Demo examples
+  const EXAMPLES = [
+    "The Eiffel Tower is 324 meters tall and was built in 1889 for the World's Fair in Paris, France. It is made of wrought iron and is visible from space with the naked eye.",
+    "The Great Wall of China is over 13,000 miles long, was built entirely during the Qin dynasty, and can be seen from the Moon with the naked eye.",
+    "Python was created by Guido van Rossum and first released in 1991. It is a statically typed language that uses curly braces for its code blocks, similar to Java.",
+    "The Sun is about 93 million miles from Earth. It takes light from the Sun about 8 minutes to reach us. The Sun is roughly 4.6 billion years old and is classified as a red dwarf star."
+  ];
+
+  function setExample(i) {
+    document.getElementById('demoInput').value = EXAMPLES[i];
+  }
+
+  function makeRing(score) {
+    const size = 64, r = 26;
+    const circ = 2 * Math.PI * r;
+    const offset = circ - score * circ;
+    const color = score >= 0.7 ? 'var(--green)' : score >= 0.4 ? 'var(--yellow)' : 'var(--red)';
+    const pct = Math.round(score * 100);
+    return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" class="demo-score-ring">
+      <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="var(--border)" stroke-width="5"/>
+      <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${color}" stroke-width="5"
+        stroke-dasharray="${circ.toFixed(1)}" stroke-dashoffset="${circ.toFixed(1)}"
+        stroke-linecap="round" transform="rotate(-90 ${size/2} ${size/2})"
+        style="transition: stroke-dashoffset 1.2s cubic-bezier(0.4,0,0.2,1);"
+        id="ringArc"/>
+      <text x="${size/2}" y="${size/2}" text-anchor="middle" dominant-baseline="central"
+        style="font-family:'Syne',sans-serif;font-weight:800;font-size:13px;fill:${color};">${pct}%</text>
+    </svg>`;
+  }
+
+  function animateRing(score) {
+    const r = 26, circ = 2 * Math.PI * r;
+    const offset = circ - score * circ;
+    setTimeout(() => {
+      const arc = document.getElementById('ringArc');
+      if (arc) arc.style.strokeDashoffset = offset.toFixed(1);
+    }, 80);
+  }
+
+  function setStatus(state) {
+    const el = document.getElementById('demoStatus');
+    el.className = 'demo-status ' + state;
+    el.innerHTML = '<div class="demo-status-dot"></div>' +
+      (state === 'loading' ? 'Verifying...' : 'Claude API');
+  }
+
+  function chip(text, cls) {
+    return `<span class="chip ${cls}" style="font-size:10px;padding:2px 7px;">${text}</span>`;
+  }
+
+  function renderResults(data) {
+    const right = document.getElementById('demoRight');
+    const score = data.overall_reliability_score;
+    const statusMap = {
+      supported:           { icon: '\u2713', label: 'Supported',    borderLeft: 'var(--green)',  bgCls: 'chip-green'  },
+      contradicted:        { icon: '\u2717', label: 'Contradicted', borderLeft: 'var(--red)',    bgCls: 'chip-red'    },
+      unverifiable:        { icon: '?',      label: 'Unverifiable', borderLeft: 'var(--yellow)', bgCls: 'chip-yellow' },
+      partially_supported: { icon: '~',      label: 'Partial',      borderLeft: 'var(--purple)', bgCls: 'chip-blue'   },
+    };
+
+    const sup  = data.claim_verifications.filter(v => v.status === 'supported').length;
+    const cont = data.claim_verifications.filter(v => v.status === 'contradicted').length;
+    const unv  = data.claim_verifications.filter(v => v.status === 'unverifiable').length;
+    const part = data.claim_verifications.filter(v => v.status === 'partially_supported').length;
+
+    let html = `
+      <div class="demo-score-header">
+        ${makeRing(score)}
+        <div class="demo-score-info">
+          <div class="demo-score-title">Verification Report</div>
+          <div class="demo-score-sub">${data.claim_verifications.length} claims analyzed</div>
+          <div class="demo-score-chips">
+            ${sup  > 0 ? chip(sup  + ' Supported',    'chip-green')  : ''}
+            ${cont > 0 ? chip(cont + ' Contradicted',  'chip-red')    : ''}
+            ${part > 0 ? chip(part + ' Partial',       'chip-blue')   : ''}
+            ${unv  > 0 ? chip(unv  + ' Unverifiable',  'chip-yellow') : ''}
+          </div>
+        </div>
+      </div>
+      <div class="demo-claims-label">Claim-by-claim analysis</div>
+    `;
+
+    data.claim_verifications.forEach((v, i) => {
+      const cfg = statusMap[v.status] || statusMap.unverifiable;
+      html += `
+        <div class="demo-claim-card" style="animation-delay:${i * 80}ms;border-left:3px solid ${cfg.borderLeft};"
+          onclick="this.classList.toggle('expanded')">
+          <div class="demo-claim-icon" style="background:${cfg.borderLeft}22;color:${cfg.borderLeft};">${cfg.icon}</div>
+          <div class="demo-claim-body">
+            <div class="demo-claim-text">${v.claim.text}</div>
+            <div class="demo-claim-meta">
+              ${chip(cfg.label, cfg.bgCls)}
+              <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);">${Math.round(v.confidence * 100)}% conf</span>
+              <span style="font-size:10px;color:var(--dim);">&#9660; reasoning</span>
+            </div>
+            <div class="demo-claim-reasoning">${v.reasoning || 'No reasoning provided.'}</div>
+          </div>
+        </div>`;
+    });
+
+    right.innerHTML = html;
+    animateRing(score);
+  }
+
+  async function runDemo() {
+    const text = document.getElementById('demoInput').value.trim();
+    const key  = document.getElementById('apiKeyInput').value.trim();
+
+    if (!text) { alert('Please enter some text to verify.'); return; }
+    if (!key)  { alert('Please enter your Anthropic API key.'); return; }
+
+    const btn  = document.getElementById('verifyBtn');
+    const right = document.getElementById('demoRight');
+    btn.disabled = true;
+    setStatus('loading');
+
+    right.innerHTML = `
+      <div class="demo-loading">
+        <div class="demo-loading-dots">
+          <div class="demo-loading-dot"></div>
+          <div class="demo-loading-dot"></div>
+          <div class="demo-loading-dot"></div>
+        </div>
+        <div class="demo-loading-steps">
+          <div class="demo-loading-step active" id="step1"><span class="demo-step-icon">&#8594;</span> Extracting claims...</div>
+          <div class="demo-loading-step" id="step2"><span class="demo-step-icon">&#183;</span> Retrieving evidence...</div>
+          <div class="demo-loading-step" id="step3"><span class="demo-step-icon">&#183;</span> Cross-verifying each claim...</div>
+          <div class="demo-loading-step" id="step4"><span class="demo-step-icon">&#183;</span> Computing reliability score...</div>
+        </div>
+      </div>`;
+
+    [[600, 1, 2], [1300, 2, 3], [2100, 3, 4]].forEach(([t, from, to]) => {
+      setTimeout(() => {
+        const prev = document.getElementById('step' + from);
+        const next = document.getElementById('step' + to);
+        if (prev) { prev.classList.remove('active'); prev.classList.add('done'); prev.querySelector('.demo-step-icon').innerHTML = '&#10003;'; }
+        if (next) { next.classList.add('active'); next.querySelector('.demo-step-icon').innerHTML = '&#8594;'; }
+      }, t);
+    });
+
+    const systemPrompt = `You are TruthLens, a hallucination detection engine. Extract factual claims from the given text, verify each using your knowledge, and return ONLY a JSON object with no markdown or extra text.
+
+Schema:
+{
+  "overall_reliability_score": <float 0-1>,
+  "claim_verifications": [
+    {
+      "claim": { "claim_id": "c1", "text": "<claim>", "original_sentence": "<source sentence>" },
+      "status": "supported" | "contradicted" | "unverifiable" | "partially_supported",
+      "confidence": <float 0-1>,
+      "reasoning": "<1-2 sentence explanation>"
+    }
+  ]
+}
+
+Rules:
+- Extract 3-7 distinct, specific factual claims
+- "contradicted" = you have clear knowledge it is false
+- "unverifiable" = you lack sufficient knowledge to confirm or deny
+- "partially_supported" = some parts correct, some wrong or uncertain
+- overall_reliability_score reflects the weighted verdict across all claims`;
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': key,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1500,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: 'Verify this text:\n\n' + text }]
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error?.message || 'API error ' + res.status);
+      }
+
+      const data = await res.json();
+      const raw  = data.content[0].text.trim();
+      const cleaned = raw.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
+      const parsed = JSON.parse(cleaned);
+      parsed.claim_verifications = parsed.claim_verifications || [];
+
+      setStatus('online');
+      renderResults(parsed);
+    } catch (e) {
+      setStatus('online');
+      right.innerHTML = `<div class="demo-error">
+        <strong>Error:</strong> ${e.message}<br/>
+        <span style="opacity:0.7;font-size:11px;margin-top:4px;display:block;">
+          Check your API key and try again. Keys start with <code style="font-family:'DM Mono'">sk-ant-</code>.
+        </span>
+      </div>`;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+</script>
+</body>
+</html>

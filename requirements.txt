@@ -1,0 +1,28 @@
+# Core API
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Vector store
+faiss-cpu>=1.9.0
+numpy>=1.26.0
+
+# LLM & Embeddings (local via Ollama)
+ollama>=0.4.0
+requests>=2.31.0
+
+# Caching
+cachetools>=5.3.0
+
+# Logging & tracking
+structlog>=23.2.0
+python-json-logger>=2.0.7
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.23.0
+httpx>=0.25.0
+
+# Utilities
+python-dotenv>=1.0.0
